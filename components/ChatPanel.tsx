@@ -28,7 +28,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ chatHistory, onSendMessage
   };
 
   return (
-    <div className="bg-white p-4 rounded-lg shadow-md border border-gray-200 flex flex-col flex-grow min-h-0">
+    <div className="flex flex-col h-full min-h-0">
       <h2 className="text-lg font-semibold mb-2 flex items-center gap-2">
         <Icons.MessageSquare className="w-5 h-5 text-gray-600" />
         <span>SME Chat & Refinement</span>

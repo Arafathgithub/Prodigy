@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import type { ChatMessage, ProcessFlow } from '../types';
 
@@ -64,17 +65,35 @@ const processFlowSchema = {
 };
 
 
-export const generateInitialFlow = async (documentText: string): Promise<ProcessFlow> => {
-    const prompt = `Analyze the provided Standard Operating Procedure (SOP) document and convert it into a structured JSON object representing the process flow. Identify all sub-processes, tasks, and individual steps. For each step, determine the responsible role and assess its potential for automation.
+export const generateInitialFlow = async (source: { text?: string; file?: { mimeType: string; data: string; } }): Promise<ProcessFlow> => {
+    let contents: any;
+
+    if (source.file) {
+        const filePart = {
+            inlineData: {
+                mimeType: source.file.mimeType,
+                data: source.file.data,
+            },
+        };
+        const textPart = {
+            text: `Analyze the provided document and convert it into a structured JSON object representing the process flow. Identify all sub-processes, tasks, and individual steps. For each step, determine the responsible role and assess its potential for automation. The document can be of various formats like TXT, PDF, or DOCX. Extract the content and perform the analysis.`
+        };
+        contents = { parts: [textPart, filePart] };
+    } else if (source.text) {
+        contents = `Analyze the provided Standard Operating Procedure (SOP) document and convert it into a structured JSON object representing the process flow. Identify all sub-processes, tasks, and individual steps. For each step, determine the responsible role and assess its potential for automation.
 
 Document:
 ---
-${documentText}
+${source.text}
 ---
 `;
+    } else {
+        throw new Error("No document source provided.");
+    }
+
     const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: prompt,
+        contents: contents,
         config: {
             responseMimeType: "application/json",
             responseSchema: processFlowSchema,

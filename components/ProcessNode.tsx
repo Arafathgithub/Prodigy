@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { SubProcess, Task, Step } from '../types';
 import { Icons } from './Icons';
 
@@ -9,9 +9,13 @@ interface ProcessNodeProps {
   type: NodeType;
   data: NodeData;
   index: number;
+  parentId: string;
+  onReorderItems: (source: { parentId: string; index: number }, destination: { parentId: string; index: number }, type: 'task' | 'step') => void;
   children?: React.ReactNode;
   onAddStep?: (taskId: string, stepDescription: string) => Promise<void>;
   onUpdateStep?: (updatedStep: Step) => void;
+  isOpen?: boolean;
+  onToggle?: () => void;
 }
 
 const getIcon = (type: NodeType) => {
@@ -40,20 +44,24 @@ const getAutomationChip = (potential: 'High' | 'Medium' | 'Low' | 'None') => {
     }
 }
 
-export const ProcessNode: React.FC<ProcessNodeProps> = ({ type, data, index, children, onAddStep, onUpdateStep }) => {
-  const [isOpen, setIsOpen] = useState(true);
+export const ProcessNode: React.FC<ProcessNodeProps> = ({ type, data, index, parentId, onReorderItems, children, onAddStep, onUpdateStep, isOpen, onToggle }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [newStepText, setNewStepText] = useState('');
-
   const [isEditing, setIsEditing] = useState(false);
   const [editedData, setEditedData] = useState<NodeData>(data);
+  const [dropIndicator, setDropIndicator] = useState<'top' | 'bottom' | null>(null);
+  const nodeContentRef = useRef<HTMLDivElement>(null);
+
 
   useEffect(() => {
     setEditedData(data);
   }, [data]);
 
   const hasChildren = React.Children.count(children) > 0;
+  const isCollapsible = hasChildren || type === 'task';
+  const isDraggable = type === 'task' || type === 'step';
+
 
   const handleSaveStep = async () => {
     if (!newStepText.trim() || !onAddStep) return;
@@ -84,6 +92,74 @@ export const ProcessNode: React.FC<ProcessNodeProps> = ({ type, data, index, chi
     const { name, value } = e.target;
     setEditedData(prev => ({ ...prev, [name]: value }));
   };
+  
+  // --- Drag and Drop Handlers ---
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData('application/json', JSON.stringify({ 
+        type, 
+        id: data.id,
+        parentId,
+        index,
+    }));
+    e.dataTransfer.effectAllowed = 'move';
+    setTimeout(() => {
+        nodeContentRef.current?.classList.add('dragging');
+    }, 0);
+  };
+
+  const handleDragEnd = () => {
+    nodeContentRef.current?.classList.remove('dragging');
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    try {
+        const dragData = JSON.parse(e.dataTransfer.getData('application/json'));
+        if (dragData.type !== type || dragData.parentId !== parentId) {
+            setDropIndicator(null);
+            return;
+        }
+        
+        const rect = nodeContentRef.current!.getBoundingClientRect();
+        const midpoint = rect.top + rect.height / 2;
+        if (e.clientY < midpoint) {
+            setDropIndicator('top');
+        } else {
+            setDropIndicator('bottom');
+        }
+    } catch (err) {
+        // Could fail if dragging from outside
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDropIndicator(null);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDropIndicator(null);
+    const sourceData = JSON.parse(e.dataTransfer.getData('application/json'));
+    
+    if (sourceData.type !== type || sourceData.parentId !== parentId) {
+        return;
+    }
+    
+    // Don't drop on itself
+    if (sourceData.id === data.id) return;
+    
+    let destinationIndex = index;
+    if (dropIndicator === 'bottom') {
+        destinationIndex += 1;
+    }
+    
+    onReorderItems(
+        { parentId: sourceData.parentId, index: sourceData.index },
+        { parentId: parentId, index: destinationIndex },
+        type
+    );
+  };
+
 
   if (type === 'step' && isEditing) {
     const stepData = editedData as Step;
@@ -136,7 +212,19 @@ export const ProcessNode: React.FC<ProcessNodeProps> = ({ type, data, index, chi
             <div className="absolute top-[2.25rem] h-px w-6 bg-gray-300"></div>
         </div>
       
-      <div className={`relative border rounded-lg shadow-sm ${getBackgroundColor(type)}`}>
+      <div 
+        ref={nodeContentRef} 
+        className={`relative border rounded-lg shadow-sm transition-shadow ${getBackgroundColor(type)}`}
+        onDragOver={isDraggable ? handleDragOver : undefined}
+        onDragLeave={isDraggable ? handleDragLeave : undefined}
+        onDrop={isDraggable ? handleDrop : undefined}
+      >
+        {isDraggable && (
+            <>
+                {dropIndicator === 'top' && <div className="absolute top-0 left-4 right-4 h-1 bg-indigo-500 rounded-full -translate-y-1/2 z-10" />}
+                {dropIndicator === 'bottom' && <div className="absolute bottom-0 left-4 right-4 h-1 bg-indigo-500 rounded-full translate-y-1/2 z-10" />}
+            </>
+        )}
         <div className="p-4 flex items-start gap-4">
            <div className="absolute left-[-1.5rem] top-[1.65rem] w-6 h-6 bg-gray-100 flex items-center justify-center">
             <span className={`flex items-center justify-center w-5 h-5 rounded-full ${type === 'subprocess' ? 'bg-indigo-600' : 'bg-blue-500'} text-white text-xs font-bold`}>
@@ -147,13 +235,24 @@ export const ProcessNode: React.FC<ProcessNodeProps> = ({ type, data, index, chi
           <div className="flex-grow">
             <div className="flex justify-between items-start">
                 <div 
-                  className={(hasChildren || type === 'task') ? 'cursor-pointer flex-grow' : 'flex-grow'}
-                  onClick={() => (hasChildren || type === 'task') && setIsOpen(!isOpen)}
+                  className={isCollapsible ? 'cursor-pointer flex-grow' : 'flex-grow'}
+                  onClick={() => isCollapsible && onToggle ? onToggle() : undefined}
                 >
                     <h3 className="font-semibold text-gray-900">{data.name}</h3>
                     {'description' in data && <p className="text-sm text-gray-600 mt-1">{data.description}</p>}
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+                   {isDraggable && (
+                    <div 
+                      draggable 
+                      onDragStart={handleDragStart}
+                      onDragEnd={handleDragEnd}
+                      className="cursor-move p-1 text-gray-400 hover:text-gray-700"
+                      aria-label="Drag to reorder"
+                    >
+                      <Icons.GripVertical className="w-5 h-5" />
+                    </div>
+                  )}
                    {type === 'step' && onUpdateStep && (
                     <button 
                       onClick={() => setIsEditing(true)} 
@@ -163,9 +262,9 @@ export const ProcessNode: React.FC<ProcessNodeProps> = ({ type, data, index, chi
                       <Icons.Edit className="w-4 h-4" />
                     </button>
                   )}
-                  {(hasChildren || type === 'task') && (
+                  {isCollapsible && (
                     <button 
-                      onClick={() => setIsOpen(!isOpen)} 
+                      onClick={() => onToggle ? onToggle() : undefined} 
                       className="p-1 rounded-md text-gray-500 hover:text-gray-800 transition-colors"
                       aria-label={isOpen ? 'Collapse' : 'Expand'}
                     >
