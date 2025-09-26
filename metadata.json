@@ -1,0 +1,5 @@
+{
+  "name": "Process Flow Codifier",
+  "description": "An AI-powered application to digitize and visualize business processes from documents and SME chats. It helps analyze, refine, and document workflows for potential automation.",
+  "requestFramePermissions": []
+}
