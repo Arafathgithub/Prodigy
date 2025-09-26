@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import type { ChatMessage, ProcessFlow } from '../types';
 
@@ -141,6 +140,50 @@ Based on the last user message, update the process flow JSON and provide a respo
     } catch (e) {
         console.error("Failed to parse chat refinement JSON:", jsonText);
         throw new Error("Could not parse the refinement from the model's response.");
+    }
+};
+
+export const enrichStepAndReturnFullFlow = async (
+    currentProcessFlow: ProcessFlow,
+    taskId: string,
+    stepDescription: string
+): Promise<ProcessFlow> => {
+    const prompt = `
+You are a business process analyst AI. Your task is to update a process flow JSON object by adding a new step to a specific task.
+
+Current Process Flow JSON:
+---
+${JSON.stringify(currentProcessFlow, null, 2)}
+---
+
+Task to modify:
+- Task ID: "${taskId}"
+
+New step to add:
+- Step Description: "${stepDescription}"
+
+Instructions:
+1.  Create a complete JSON object for the new step. Infer the 'name' (a short title), 'responsible_role', and 'automation_potential' based on the provided description and the context of the other steps in the task.
+2.  Generate a new unique ID for the step (e.g., if the last step was 'step_x_y_z', the new one could be 'step_x_y_{z+1}').
+3.  Add this new step object to the end of the "steps" array within the task that has the ID "${taskId}".
+4.  Return the *entire*, updated JSON object for the process flow. The returned JSON must be valid and adhere to the schema. Do not change any other part of the process flow.
+`;
+
+    const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: processFlowSchema,
+        },
+    });
+
+    const jsonText = response.text.trim();
+    try {
+        return JSON.parse(jsonText) as ProcessFlow;
+    } catch (e) {
+        console.error("Failed to parse enriched step flow JSON:", jsonText);
+        throw new Error("Could not parse the updated process flow from the model's response.");
     }
 };
 

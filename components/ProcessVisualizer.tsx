@@ -1,4 +1,3 @@
-
 import React from 'react';
 import type { ProcessFlow, SubProcess, Task, Step } from '../types';
 import { Icons } from './Icons';
@@ -11,9 +10,11 @@ interface ProcessVisualizerProps {
   isDocLoading: boolean;
   finalDocument: string | null;
   onCloseDocument: () => void;
+  onAddStep: (taskId: string, stepDescription: string) => Promise<void>;
+  onUpdateStep: (updatedStep: Step) => void;
 }
 
-export const ProcessVisualizer: React.FC<ProcessVisualizerProps> = ({ processFlow, isLoading, onGenerateDocument, isDocLoading, finalDocument, onCloseDocument }) => {
+export const ProcessVisualizer: React.FC<ProcessVisualizerProps> = ({ processFlow, isLoading, onGenerateDocument, isDocLoading, finalDocument, onCloseDocument, onAddStep, onUpdateStep }) => {
 
   if (isLoading) {
     return (
@@ -73,9 +74,9 @@ export const ProcessVisualizer: React.FC<ProcessVisualizerProps> = ({ processFlo
         {processFlow.sub_processes.map((subProcess, index) => (
           <ProcessNode key={subProcess.id} type="subprocess" data={subProcess} index={index}>
             {subProcess.tasks.map((task, taskIndex) => (
-              <ProcessNode key={task.id} type="task" data={task} index={taskIndex}>
+              <ProcessNode key={task.id} type="task" data={task} index={taskIndex} onAddStep={onAddStep}>
                 {task.steps.map((step, stepIndex) => (
-                  <ProcessNode key={step.id} type="step" data={step} index={stepIndex} />
+                  <ProcessNode key={step.id} type="step" data={step} index={stepIndex} onUpdateStep={onUpdateStep} />
                 ))}
               </ProcessNode>
             ))}

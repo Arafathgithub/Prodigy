@@ -4,8 +4,8 @@ import { Header } from './components/Header';
 import { InputPanel } from './components/InputPanel';
 import { ChatPanel } from './components/ChatPanel';
 import { ProcessVisualizer } from './components/ProcessVisualizer';
-import type { ProcessFlow, ChatMessage, LoadingStates } from './types';
-import { generateInitialFlow, refineFlowWithChat, generateFinalDocument } from './services/geminiService';
+import type { ProcessFlow, ChatMessage, LoadingStates, Step } from './types';
+import { generateInitialFlow, refineFlowWithChat, generateFinalDocument, enrichStepAndReturnFullFlow } from './services/geminiService';
 import { SAMPLE_SOP } from './constants';
 
 const App: React.FC = () => {
@@ -68,6 +68,42 @@ const App: React.FC = () => {
         setLoadingStates(prev => ({ ...prev, doc: false }));
     }
   }, [processFlow]);
+  
+  const handleAddNewStep = useCallback(async (taskId: string, stepDescription: string) => {
+    if (!processFlow) return;
+
+    setLoadingStates(prev => ({ ...prev, chat: true })); // Reuse chat loading state for simplicity
+    try {
+      const updatedFlow = await enrichStepAndReturnFullFlow(processFlow, taskId, stepDescription);
+      setProcessFlow(updatedFlow);
+      setChatHistory(prev => [...prev, { role: 'model', content: "I've added the new step you requested to the process flow." }]);
+    // FIX: Added opening curly brace to the catch block to fix a syntax error that was causing subsequent errors.
+    } catch (error) {
+      console.error("Error enriching new step:", error);
+      setChatHistory(prev => [...prev, { role: 'model', content: "I'm sorry, I had trouble adding that step. Please try again." }]);
+    } finally {
+      setLoadingStates(prev => ({ ...prev, chat: false }));
+    }
+  }, [processFlow]);
+  
+  const handleUpdateStep = useCallback((updatedStep: Step) => {
+    if (!processFlow) return;
+
+    const newProcessFlow = {
+      ...processFlow,
+      sub_processes: processFlow.sub_processes.map(sp => ({
+        ...sp,
+        tasks: sp.tasks.map(task => ({
+          ...task,
+          steps: task.steps.map(step => (step.id === updatedStep.id ? updatedStep : step)),
+        })),
+      })),
+    };
+    
+    setProcessFlow(newProcessFlow);
+    setChatHistory(prev => [...prev, { role: 'model', content: `I've updated the step: "${updatedStep.name}". You can review the changes in the visualizer.` }]);
+  }, [processFlow]);
+
 
   useEffect(() => {
     handleAnalyze(SAMPLE_SOP);
@@ -96,6 +132,8 @@ const App: React.FC = () => {
             isDocLoading={loadingStates.doc}
             finalDocument={finalDocument}
             onCloseDocument={() => setFinalDocument(null)}
+            onAddStep={handleAddNewStep}
+            onUpdateStep={handleUpdateStep}
           />
         </div>
       </main>
