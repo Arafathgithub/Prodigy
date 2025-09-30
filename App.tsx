@@ -4,10 +4,12 @@ import { Header } from './components/Header';
 import { InputPanel } from './components/InputPanel';
 import { ChatPanel } from './components/ChatPanel';
 import { ProcessVisualizer } from './components/ProcessVisualizer';
-import type { ProcessFlow, ChatMessage, LoadingStates, Step, Task } from './types';
-import { generateInitialFlow, refineFlowWithChat, generateFinalDocument, enrichStepAndReturnFullFlow } from './services/geminiService';
+import type { ProcessFlow, ChatMessage, LoadingStates, Step, Task, AiConfig } from './types';
+import { generateInitialFlow, refineFlowWithChat, generateFinalDocument, enrichStepAndReturnFullFlow } from './services/aiService';
 import { SAMPLE_SOP } from './constants';
 import { Icons } from './components/Icons';
+import useLocalStorage from './hooks/useLocalStorage';
+import { SettingsModal } from './components/SettingsModal';
 
 type ActiveTab = 'input' | 'chat';
 
@@ -18,26 +20,33 @@ const App: React.FC = () => {
   const [finalDocument, setFinalDocument] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>('input');
 
+  const [aiConfig, setAiConfig] = useLocalStorage<AiConfig>('ai-config', {
+    provider: 'gemini',
+    azure: { endpoint: '', deployment: '', apiKey: '' },
+    ollama: { baseUrl: 'http://localhost:11434', model: '' }
+  });
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
   const handleAnalyze = useCallback(async (source: { text?: string; file?: { mimeType: string; data: string; } }) => {
     setLoadingStates(prev => ({ ...prev, flow: true }));
     setProcessFlow(null);
     setChatHistory([]);
     setFinalDocument(null);
     try {
-      const initialFlow = await generateInitialFlow(source);
+      const initialFlow = await generateInitialFlow(source, aiConfig);
       setProcessFlow(initialFlow);
       setChatHistory([{
         role: 'model',
         content: "I've analyzed the document and created an initial process flow. You can now review it and use this chat to make refinements or ask me to fill in any gaps."
       }]);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error analyzing document:", error);
-      setChatHistory([{ role: 'model', content: "I'm sorry, I encountered an error while analyzing the document. Please check the console for details and try again." }]);
+      setChatHistory([{ role: 'model', content: `I'm sorry, I encountered an error while analyzing the document: ${error.message}. Please check your AI provider settings or the console for details.` }]);
     } finally {
       setLoadingStates(prev => ({ ...prev, flow: false }));
       setActiveTab('chat');
     }
-  }, []);
+  }, [aiConfig]);
 
   const handleSendMessage = useCallback(async (message: string) => {
     const userMessage: ChatMessage = { role: 'user', content: message };
@@ -49,47 +58,46 @@ const App: React.FC = () => {
       if (!processFlow) {
         throw new Error("Cannot refine flow, process is not initialized.");
       }
-      const { updatedFlow, aiResponse } = await refineFlowWithChat(newChatHistory, processFlow);
+      const { updatedFlow, aiResponse } = await refineFlowWithChat(newChatHistory, processFlow, aiConfig);
       setProcessFlow(updatedFlow);
       setChatHistory(prev => [...prev, { role: 'model', content: aiResponse }]);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error refining flow with chat:", error);
-      setChatHistory(prev => [...prev, { role: 'model', content: "Sorry, I had trouble processing that. Let's try again." }]);
+      setChatHistory(prev => [...prev, { role: 'model', content: `Sorry, I had trouble processing that: ${error.message}. Let's try again.` }]);
     } finally {
       setLoadingStates(prev => ({ ...prev, chat: false }));
     }
-  }, [chatHistory, processFlow]);
+  }, [chatHistory, processFlow, aiConfig]);
   
   const handleGenerateDocument = useCallback(async () => {
     if (!processFlow) return;
     setLoadingStates(prev => ({ ...prev, doc: true }));
     try {
-        const doc = await generateFinalDocument(processFlow);
+        const doc = await generateFinalDocument(processFlow, aiConfig);
         setFinalDocument(doc);
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error generating document:", error);
-        setChatHistory(prev => [...prev, { role: 'model', content: "An error occurred while generating the final document." }]);
+        setChatHistory(prev => [...prev, { role: 'model', content: `An error occurred while generating the final document: ${error.message}.` }]);
     } finally {
         setLoadingStates(prev => ({ ...prev, doc: false }));
     }
-  }, [processFlow]);
+  }, [processFlow, aiConfig]);
   
   const handleAddNewStep = useCallback(async (taskId: string, stepDescription: string) => {
     if (!processFlow) return;
 
     setLoadingStates(prev => ({ ...prev, chat: true })); // Reuse chat loading state for simplicity
     try {
-      const updatedFlow = await enrichStepAndReturnFullFlow(processFlow, taskId, stepDescription);
+      const updatedFlow = await enrichStepAndReturnFullFlow(processFlow, taskId, stepDescription, aiConfig);
       setProcessFlow(updatedFlow);
       setChatHistory(prev => [...prev, { role: 'model', content: "I've added the new step you requested to the process flow." }]);
-    // FIX: Added opening curly brace to the catch block to fix a syntax error that was causing subsequent errors.
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error enriching new step:", error);
-      setChatHistory(prev => [...prev, { role: 'model', content: "I'm sorry, I had trouble adding that step. Please try again." }]);
+      setChatHistory(prev => [...prev, { role: 'model', content: `I'm sorry, I had trouble adding that step: ${error.message}. Please try again.` }]);
     } finally {
       setLoadingStates(prev => ({ ...prev, chat: false }));
     }
-  }, [processFlow]);
+  }, [processFlow, aiConfig]);
   
   const handleUpdateStep = useCallback((updatedStep: Step) => {
     if (!processFlow) return;
@@ -163,7 +171,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen font-sans bg-gray-100">
-      <Header />
+      <Header onSettingsClick={() => setIsSettingsOpen(true)} />
       <main className="flex-grow grid grid-cols-1 lg:grid-cols-12 gap-4 p-4 overflow-hidden">
         <div className="lg:col-span-4 xl:col-span-3 flex flex-col overflow-hidden bg-white rounded-lg shadow-md border border-gray-200">
           <div className="flex-shrink-0 flex border-b border-gray-200" role="tablist">
@@ -204,6 +212,17 @@ const App: React.FC = () => {
           />
         </div>
       </main>
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        provider={aiConfig.provider}
+        onProviderChange={provider => setAiConfig(c => ({...c, provider}))}
+        azureConfig={aiConfig.azure}
+        onAzureConfigChange={azure => setAiConfig(c => ({...c, azure}))}
+        ollamaConfig={aiConfig.ollama}
+        onOllamaConfigChange={ollama => setAiConfig(c => ({...c, ollama}))}
+        onSave={() => setIsSettingsOpen(false)}
+      />
     </div>
   );
 };

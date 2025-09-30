@@ -39,3 +39,22 @@ export interface LoadingStates {
   chat: boolean;
   doc: boolean;
 }
+
+export type AiProvider = 'gemini' | 'azure' | 'ollama';
+
+export interface AzureConfig {
+  endpoint: string;
+  deployment: string;
+  apiKey: string;
+}
+
+export interface OllamaConfig {
+  baseUrl: string;
+  model: string;
+}
+
+export interface AiConfig {
+    provider: AiProvider;
+    azure: AzureConfig;
+    ollama: OllamaConfig;
+}
