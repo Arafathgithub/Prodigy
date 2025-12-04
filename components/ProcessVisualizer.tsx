@@ -189,9 +189,11 @@ export const ProcessVisualizer: React.FC<ProcessVisualizerProps> = ({ processFlo
     <div className="h-full flex flex-col">
       <div className="flex-shrink-0 flex justify-between items-start p-6 pb-4 border-b border-gray-200">
         <div>
-            <h2 className="text-2xl font-bold text-gray-800">{processFlow.process_name}</h2>
-            <p className="text-gray-600">{processFlow.description}</p>
-            <span className="text-xs font-mono bg-gray-200 text-gray-700 px-2 py-1 rounded-full mt-2 inline-block">v{processFlow.version}</span>
+            <div className="flex items-baseline gap-3">
+                <h2 className="text-2xl font-bold text-gray-800">{processFlow.process_name}</h2>
+                <span className="text-xs font-mono bg-gray-200 text-gray-700 px-2 py-1 rounded-full">v{processFlow.version}</span>
+            </div>
+            <p className="text-gray-600 mt-1">{processFlow.description}</p>
         </div>
         <button 
             onClick={onGenerateDocument}

@@ -153,6 +153,13 @@ export const ProcessNode: React.FC<ProcessNodeProps> = ({ type, data, index, par
         destinationIndex += 1;
     }
     
+    // Fix: Add a type guard because onReorderItems only accepts 'task' or 'step' types.
+    // Although `isDraggable` prevents this handler from being called for 'subprocess',
+    // TypeScript doesn't infer this within the function's scope.
+    if (type === 'subprocess') {
+      return;
+    }
+
     onReorderItems(
         { parentId: sourceData.parentId, index: sourceData.index },
         { parentId: parentId, index: destinationIndex },
